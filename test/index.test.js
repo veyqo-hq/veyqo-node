@@ -52,3 +52,34 @@ test('verifies a webhook signature, any of several during rotation', () => {
   assert.throws(() => verifyWebhook(body, headers, 'wrong'), VeyqoSignatureError)
   assert.throws(() => verifyWebhook(body, headers, 'whsec_new', { now: (timestamp + 600) * 1000 }), VeyqoSignatureError)
 })
+
+test('transfers: banks, resolve, create and retrieve', async () => {
+  const seen = []
+  const veyqo = new Veyqo('kc_test_abc', {
+    fetch: fakeFetch(
+      [
+        { body: { success: true, data: [{ id: '000013', name: 'GTBank', providers: ['paystack'] }] } },
+        { body: { success: true, data: { account_name: 'ADA LOVELACE' } } },
+        { status: 201, body: { success: true, data: { id: 'trf_1', status: 'pending' } } },
+        { body: { success: true, data: { id: 'trf_1', status: 'successful' } } },
+      ],
+      seen,
+    ),
+  })
+  const banks = await veyqo.transfers.banks({ provider: 'paystack' })
+  assert.equal(banks[0].id, '000013')
+  assert.equal(seen[0].url, 'https://api.veyqo.org/api/v1/transfers/banks?provider=paystack')
+  assert.equal((await veyqo.transfers.resolve({ bank: '000013', account_number: '0123456789' })).account_name, 'ADA LOVELACE')
+  const transfer = await veyqo.transfers.create({ amount: 500000, bank: '000013', account_number: '0123456789' })
+  assert.equal(transfer.id, 'trf_1')
+  assert.ok(seen[2].init.headers['Idempotency-Key'])
+  assert.equal((await veyqo.transfers.retrieve('trf_1')).status, 'successful')
+})
+
+test('subscriptions.changePlan posts to the plan endpoint', async () => {
+  const seen = []
+  const veyqo = new Veyqo('kc_test_abc', { fetch: fakeFetch([{ body: { success: true, data: { id: 'csub_1' } } }], seen) })
+  await veyqo.subscriptions.changePlan('csub_1', { plan: 'rplan_2', at_period_end: false })
+  assert.equal(seen[0].url, 'https://api.veyqo.org/api/v1/subscriptions/csub_1/plan')
+  assert.deepEqual(JSON.parse(seen[0].init.body), { plan: 'rplan_2', at_period_end: false })
+})

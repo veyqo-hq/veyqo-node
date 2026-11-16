@@ -51,6 +51,31 @@ export declare class Veyqo {
     list(query?: Json): Promise<Page<Json>>
     retrieve(subscriptionId: string): Promise<Json>
     cancel(subscriptionId: string, body?: { at_period_end?: boolean }): Promise<Json>
+    /** Switch at the next renewal (default), or now for the prorated difference with at_period_end: false. */
+    changePlan(subscriptionId: string, body: { plan: string; at_period_end?: boolean }, options?: RequestOptions): Promise<Json>
+  }
+  /** Bank transfers from your own provider balance (docs: veyqo.org/docs/transfers). */
+  transfers: {
+    /** Every bank and which providers reach it; with { provider }, that provider's own list and codes. */
+    banks(query?: { provider?: string }): Promise<Json[]>
+    /** Whose account it is, before you send. */
+    resolve(body: { bank?: string; bank_code?: string; account_number: string; provider?: string }): Promise<Json>
+    create(
+      body: {
+        amount: number
+        bank?: string
+        bank_code?: string
+        account_number: string
+        account_name?: string
+        narration?: string
+        reference?: string
+        provider?: string
+        metadata?: Json
+      },
+      options?: RequestOptions,
+    ): Promise<Json>
+    list(query?: { status?: 'pending' | 'successful' | 'failed'; page?: number; per_page?: number }): Promise<Page<Json>>
+    retrieve(transferId: string): Promise<Json>
   }
   events: { list(query?: Json): Promise<Page<Json>>; retrieve(eventId: string): Promise<Json> }
   providers: { list(): Promise<Json[]> }

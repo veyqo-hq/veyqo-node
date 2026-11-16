@@ -26,6 +26,17 @@ const payment = await veyqo.payments.create({
 const plan = await veyqo.plans.create({ name: 'Pro', amount: 250000, currency: 'NGN', interval: 'month' })
 const subscription = await veyqo.subscriptions.create({ plan: plan.id, customer: { email: 'customer@example.com' } })
 // send the customer to subscription.checkout_url for the first period
+
+// Bank transfers from your provider balance
+const account = await veyqo.transfers.resolve({ bank: '000013', account_number: '0123456789' })
+const transfer = await veyqo.transfers.create({
+  amount: 500000,
+  bank: '000013', // GTBank's NIBSS code: works on every provider
+  account_number: '0123456789',
+  account_name: account.account_name, // refused if the bank's name differs
+  reference: 'PAYOUT-1001',
+})
+// transfer.status: successful, failed or pending (then transfer.successful / transfer.failed webhooks)
 ```
 
 ## Webhooks

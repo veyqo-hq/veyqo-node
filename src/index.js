@@ -68,6 +68,15 @@ export class Veyqo {
       retrieve: (subscriptionId) => this.request('GET', `/subscriptions/${id(subscriptionId)}`),
       cancel: (subscriptionId, body = { at_period_end: true }) =>
         this.request('POST', `/subscriptions/${id(subscriptionId)}/cancel`, body),
+      changePlan: (subscriptionId, body, opts) =>
+        this.request('POST', `/subscriptions/${id(subscriptionId)}/plan`, body, opts),
+    }
+    this.transfers = {
+      banks: (query) => this.request('GET', '/transfers/banks', undefined, { query }),
+      resolve: (body) => this.request('POST', '/transfers/resolve', body),
+      create: r('POST', '/transfers'),
+      list: (query) => this.request('GET', '/transfers', undefined, { query }),
+      retrieve: (transferId) => this.request('GET', `/transfers/${id(transferId)}`),
     }
     this.events = {
       list: (query) => this.request('GET', '/events', undefined, { query }),
