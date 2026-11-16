@@ -1,5 +1,6 @@
-# Publishes to npm when a GitHub release is created. Needs an NPM_TOKEN
-# repository secret (an npm automation token with access to @veyqo).
+# Publishes to npm when a GitHub release is created, through npm trusted
+# publishing (OIDC): no token is stored anywhere. npmjs.com → @veyqo/node →
+# Settings → Trusted Publisher names this repository and this workflow file.
 name: Publish
 on:
   release:
@@ -16,7 +17,8 @@ jobs:
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm 11.5.1 or later; Node 22 ships npm 10.
+      - run: npm install -g npm@latest
       - run: npm test
-      - run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # Provenance is attached automatically with trusted publishing.
+      - run: npm publish --access public
