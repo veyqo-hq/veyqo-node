@@ -1,0 +1,21 @@
+{
+  "name": "@veyqo/node",
+  "version": "0.1.0",
+  "description": "Official Node.js library for the Veyqo payments API: payments, checkout, refunds, subscriptions and webhook verification.",
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js"
+    }
+  },
+  "files": ["src", "README.md", "LICENSE"],
+  "engines": { "node": ">=18" },
+  "scripts": { "test": "node --test test/*.test.js" },
+  "keywords": ["veyqo", "payments", "paystack", "flutterwave", "nigeria", "africa", "subscriptions", "webhooks"],
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/coder-frank/veyqo-node" },
+  "homepage": "https://veyqo.org/docs"
+}
