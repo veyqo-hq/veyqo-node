@@ -1,6 +1,6 @@
 {
   "name": "@veyqo/node",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Official Node.js library for the Veyqo payments API: payments, checkout, refunds, subscriptions, bank transfers and webhook verification.",
   "type": "module",
   "main": "./src/index.js",
