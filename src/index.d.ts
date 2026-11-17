@@ -36,6 +36,8 @@ export declare class Veyqo {
     list(query?: Json): Promise<Page<Json>>
     retrieve(paymentId: string): Promise<Json>
     verify(paymentId: string): Promise<Json>
+    /** Close a payment nobody has paid, so an old link cannot take money. */
+    cancel(paymentId: string): Promise<Json>
     refund(paymentId: string, body?: Json, options?: RequestOptions): Promise<Json>
   }
   refunds: { retrieve(refundId: string): Promise<Json> }

@@ -83,3 +83,11 @@ test('subscriptions.changePlan posts to the plan endpoint', async () => {
   assert.equal(seen[0].url, 'https://api.veyqo.org/api/v1/subscriptions/csub_1/plan')
   assert.deepEqual(JSON.parse(seen[0].init.body), { plan: 'rplan_2', at_period_end: false })
 })
+
+test('payments.cancel posts to the cancel endpoint', async () => {
+  const seen = []
+  const veyqo = new Veyqo('kc_test_abc', { fetch: fakeFetch([{ body: { success: true, data: { id: 'pay_1', status: 'cancelled' } } }], seen) })
+  assert.equal((await veyqo.payments.cancel('pay_1')).status, 'cancelled')
+  assert.equal(seen[0].url, 'https://api.veyqo.org/api/v1/payments/pay_1/cancel')
+  assert.equal(seen[0].init.method, 'POST')
+})

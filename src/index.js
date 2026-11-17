@@ -49,6 +49,7 @@ export class Veyqo {
       list: (query) => this.request('GET', '/payments', undefined, { query }),
       retrieve: (paymentId) => this.request('GET', `/payments/${id(paymentId)}`),
       verify: (paymentId) => this.request('POST', `/payments/${id(paymentId)}/verify`),
+      cancel: (paymentId) => this.request('POST', `/payments/${id(paymentId)}/cancel`),
       refund: (paymentId, body = {}, opts) => this.request('POST', `/payments/${id(paymentId)}/refunds`, body, opts),
     }
     this.refunds = { retrieve: (refundId) => this.request('GET', `/refunds/${id(refundId)}`) }
