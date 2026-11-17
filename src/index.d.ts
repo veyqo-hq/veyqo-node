@@ -56,6 +56,18 @@ export interface PaymentCreateParams {
   /** Have a provider that supports it (Stripe) add sales tax / VAT / GST at checkout. */
   tax?: { automatic: boolean }
   metadata?: Record<string, string | number | boolean>
+  /**
+   * Pay part of it straight to split recipients at settlement: flat shares in
+   * the smallest unit, together less than amount. The rest is yours. The
+   * payment goes through the recipients' provider.
+   */
+  split?: SplitShare[]
+}
+
+export interface SplitShare {
+  /** A split recipient id (spr_…). */
+  recipient: string
+  amount: number
 }
 
 /** The provider's fraud assessment, when it gives one. */
@@ -82,6 +94,7 @@ export interface Payment {
   shipping: PaymentCreateParams['shipping'] | null
   tax: { automatic: boolean }
   risk: PaymentRisk | null
+  split: SplitShare[] | null
   checkout_url: string | null
   provider: string
   failure_code: string | null
@@ -89,6 +102,127 @@ export interface Payment {
   metadata: Record<string, unknown>
   created_at: string
   [key: string]: unknown
+}
+
+export interface Bank {
+  /** Veyqo bank id (the NIBSS institution code), when there is one. */
+  id: string | null
+  code?: string | null
+  name: string
+}
+
+export interface TransferCreateParams {
+  amount: number
+  currency?: 'NGN'
+  /** A Veyqo bank id from transfers.banks(). Not needed with beneficiary. */
+  bank?: string
+  /** A provider's own bank code instead of bank; needs provider when several are connected. */
+  bank_code?: string
+  account_number?: string
+  /** A saved beneficiary (ben_…) instead of bank details. Still name-checked. */
+  beneficiary?: string
+  /** Refused, nothing sent, if the bank's name for the account differs. */
+  account_name?: string
+  narration?: string
+  reference?: string
+  provider?: string
+  metadata?: Json
+}
+
+export interface Transfer {
+  id: string
+  object: 'transfer'
+  reference: string | null
+  /** awaiting_approval: at or above your approval limit, held until an owner or admin approves it in the dashboard. */
+  status: 'pending' | 'successful' | 'failed' | 'awaiting_approval'
+  amount: number
+  currency: string
+  account_number: string
+  account_name: string | null
+  bank: Bank
+  narration: string | null
+  provider: { name: string; reference: string | null; transfer_id: string | null }
+  /** Why it failed or was rejected, in words. */
+  failure_message: string | null
+  /** Set when it needed approval: approved_at stays null until someone approves it. */
+  approval: { required: true; approved_at: string | null } | null
+  metadata: Record<string, unknown>
+  created_at: string
+  completed_at: string | null
+  [key: string]: unknown
+}
+
+export interface TransferBatch {
+  id: string
+  object: 'transfer_batch'
+  status: 'queued' | 'sending' | 'done'
+  provider: string | null
+  total: number
+  total_amount: number
+  currency: string
+  progress: { queued: number; sent: number; refused: number }
+  transfers: {
+    row: number
+    reference: string
+    amount: number
+    outcome: 'queued' | 'sent' | 'refused'
+    transfer_id: string | null
+    status: Transfer['status'] | null
+    error: string | null
+  }[]
+  created_at: string
+  completed_at: string | null
+}
+
+export interface Balance {
+  provider: string
+  /** False when the provider does not report balances. */
+  available: boolean
+  /** Set when the provider did not answer. */
+  error: string | null
+  balances: { currency: string; available: number; pending: number }[]
+  checked_at: string
+  [key: string]: unknown
+}
+
+export interface Beneficiary {
+  id: string
+  object: 'beneficiary'
+  label: string | null
+  bank: Bank
+  provider: string | null
+  account_number: string
+  /** As the bank returned it when saved. */
+  account_name: string
+  created_at: string
+}
+
+export interface VirtualAccount {
+  id: string
+  object: 'virtual_account'
+  reference: string | null
+  status: string
+  /** The NUBAN the customer pays into. */
+  account_number: string
+  account_name: string | null
+  bank_name: string | null
+  provider: string
+  customer: { email: string; name: string | null }
+  metadata: Record<string, unknown>
+  created_at: string
+}
+
+export interface SplitRecipient {
+  id: string
+  object: 'split_recipient'
+  name: string
+  reference: string | null
+  /** Split payments naming it go through this provider. */
+  provider: string
+  bank: { id: string | null; name: string | null }
+  account_number_last4: string
+  account_name: string | null
+  created_at: string
 }
 
 export declare class VeyqoError extends Error {
@@ -133,22 +267,75 @@ export declare class Veyqo {
     banks(query?: { provider?: string }): Promise<Json[]>
     /** Whose account it is, before you send. */
     resolve(body: { bank?: string; bank_code?: string; account_number: string; provider?: string }): Promise<Json>
+    create(body: TransferCreateParams, options?: RequestOptions): Promise<Transfer>
+    list(query?: { status?: Transfer['status']; page?: number; per_page?: number }): Promise<Page<Transfer>>
+    retrieve(transferId: string): Promise<Transfer>
+    /** Up to 200 transfers sent one by one in the background (payroll, vendor payouts). */
+    batches: {
+      create(
+        body: {
+          /** Identifies the batch: the same reference twice is refused. */
+          reference: string
+          provider?: string
+          transfers: {
+            amount: number
+            bank?: string
+            bank_code?: string
+            account_number: string
+            account_name?: string
+            narration?: string
+            reference?: string
+          }[]
+        },
+        options?: RequestOptions,
+      ): Promise<TransferBatch>
+      retrieve(batchId: string): Promise<TransferBatch>
+    }
+  }
+  /** What each connected provider account holds, in the smallest unit. */
+  balances: { list(): Promise<Balance[]> }
+  /** Saved bank accounts, name-checked when saved; send to one with transfers.create({ beneficiary }). */
+  beneficiaries: {
+    create(
+      body: { bank?: string; bank_code?: string; account_number: string; provider?: string; label?: string },
+      options?: RequestOptions,
+    ): Promise<Beneficiary>
+    list(query?: { page?: number; per_page?: number }): Promise<Page<Beneficiary>>
+    del(beneficiaryId: string): Promise<{ id: string; deleted: true }>
+  }
+  /** A permanent account number per customer; each confirmed deposit becomes a succeeded payment. */
+  virtualAccounts: {
     create(
       body: {
-        amount: number
-        bank?: string
-        bank_code?: string
-        account_number: string
-        account_name?: string
-        narration?: string
-        reference?: string
+        customer: { email: string; name?: string; phone?: string; /** 11 digits; Flutterwave needs it. */ bvn?: string }
         provider?: string
+        reference?: string
         metadata?: Json
       },
       options?: RequestOptions,
-    ): Promise<Json>
-    list(query?: { status?: 'pending' | 'successful' | 'failed'; page?: number; per_page?: number }): Promise<Page<Json>>
-    retrieve(transferId: string): Promise<Json>
+    ): Promise<VirtualAccount>
+    list(query?: { page?: number; per_page?: number }): Promise<Page<VirtualAccount>>
+    /** By id (va_…) or your reference. */
+    retrieve(accountId: string): Promise<VirtualAccount>
+  }
+  /** Who can take a share of a payment (payments.create({ split })). */
+  splitRecipients: {
+    create(
+      body: {
+        name: string
+        bank?: string
+        bank_code?: string
+        account_number: string
+        provider?: string
+        reference?: string
+        email?: string
+        phone?: string
+      },
+      options?: RequestOptions,
+    ): Promise<SplitRecipient>
+    list(query?: { page?: number; per_page?: number }): Promise<Page<SplitRecipient>>
+    /** By id (spr_…) or your reference. */
+    retrieve(recipientId: string): Promise<SplitRecipient>
   }
   events: { list(query?: Json): Promise<Page<Json>>; retrieve(eventId: string): Promise<Json> }
   providers: { list(): Promise<Json[]> }

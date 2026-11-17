@@ -91,3 +91,49 @@ test('payments.cancel posts to the cancel endpoint', async () => {
   assert.equal(seen[0].url, 'https://api.veyqo.org/api/v1/payments/pay_1/cancel')
   assert.equal(seen[0].init.method, 'POST')
 })
+
+test('new resources: balances, beneficiaries, batches, virtual accounts, split recipients', async () => {
+  const seen = []
+  const ok = (data, status = 200) => ({ status, body: { success: true, data } })
+  const veyqo = new Veyqo('kc_test_abc', {
+    fetch: fakeFetch(
+      [
+        ok([{ provider: 'paystack', available: true, balances: [] }]),
+        ok({ id: 'ben_1' }, 201),
+        ok({ id: 'ben_1', deleted: true }),
+        ok({ id: 'tbat_1', status: 'queued' }, 201),
+        ok({ id: 'tbat_1', status: 'done' }),
+        ok({ id: 'va_1', account_number: '9930000001' }, 201),
+        ok({ id: 'va_1' }),
+        ok({ id: 'spr_1' }, 201),
+        ok({ id: 'pay_1', split: [{ recipient: 'spr_1', amount: 250000 }] }, 201),
+      ],
+      seen,
+    ),
+  })
+
+  assert.equal((await veyqo.balances.list())[0].provider, 'paystack')
+  await veyqo.beneficiaries.create({ bank: '000013', account_number: '0123456789' })
+  assert.equal((await veyqo.beneficiaries.del('ben_1')).deleted, true)
+  await veyqo.transfers.batches.create({ reference: 'PAYROLL-NOV', transfers: [{ amount: 100000, bank: '000013', account_number: '0123456789' }] })
+  assert.equal((await veyqo.transfers.batches.retrieve('tbat_1')).status, 'done')
+  assert.equal((await veyqo.virtualAccounts.create({ customer: { email: 'ada@example.com' }, reference: 'CUST 42' })).account_number, '9930000001')
+  await veyqo.virtualAccounts.retrieve('CUST 42')
+  await veyqo.splitRecipients.create({ name: 'Ada Stores', bank: '000013', account_number: '0123456789' })
+  await veyqo.payments.create({ amount: 1000000, currency: 'NGN', customer: { email: 'b@c.co' }, split: [{ recipient: 'spr_1', amount: 250000 }] })
+
+  const calls = seen.map(({ url, init }) => `${init.method} ${new URL(url).pathname}`)
+  assert.deepEqual(calls, [
+    'GET /api/v1/balances',
+    'POST /api/v1/beneficiaries',
+    'DELETE /api/v1/beneficiaries/ben_1',
+    'POST /api/v1/transfers/batches',
+    'GET /api/v1/transfers/batches/tbat_1',
+    'POST /api/v1/virtual-accounts',
+    'GET /api/v1/virtual-accounts/CUST%2042',
+    'POST /api/v1/split-recipients',
+    'POST /api/v1/payments',
+  ])
+  assert.equal(seen[2].init.headers['Idempotency-Key'], undefined)
+  assert.deepEqual(JSON.parse(seen[8].init.body).split, [{ recipient: 'spr_1', amount: 250000 }])
+})

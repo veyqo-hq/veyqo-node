@@ -1,6 +1,6 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
 
-export const VERSION = '0.1.0'
+export const VERSION = '0.4.0'
 const DEFAULT_BASE_URL = 'https://api.veyqo.org/api/v1'
 
 /** Any error the API returned, with its documented code (docs/API.md). */
@@ -78,6 +78,26 @@ export class Veyqo {
       create: r('POST', '/transfers'),
       list: (query) => this.request('GET', '/transfers', undefined, { query }),
       retrieve: (transferId) => this.request('GET', `/transfers/${id(transferId)}`),
+      batches: {
+        create: r('POST', '/transfers/batches'),
+        retrieve: (batchId) => this.request('GET', `/transfers/batches/${id(batchId)}`),
+      },
+    }
+    this.balances = { list: () => this.request('GET', '/balances') }
+    this.beneficiaries = {
+      create: r('POST', '/beneficiaries'),
+      list: (query) => this.request('GET', '/beneficiaries', undefined, { query }),
+      del: (beneficiaryId) => this.request('DELETE', `/beneficiaries/${id(beneficiaryId)}`),
+    }
+    this.virtualAccounts = {
+      create: r('POST', '/virtual-accounts'),
+      list: (query) => this.request('GET', '/virtual-accounts', undefined, { query }),
+      retrieve: (accountId) => this.request('GET', `/virtual-accounts/${id(accountId)}`),
+    }
+    this.splitRecipients = {
+      create: r('POST', '/split-recipients'),
+      list: (query) => this.request('GET', '/split-recipients', undefined, { query }),
+      retrieve: (recipientId) => this.request('GET', `/split-recipients/${id(recipientId)}`),
     }
     this.events = {
       list: (query) => this.request('GET', '/events', undefined, { query }),
