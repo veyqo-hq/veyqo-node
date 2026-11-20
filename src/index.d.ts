@@ -225,6 +225,100 @@ export interface SplitRecipient {
   created_at: string
 }
 
+export interface CardControls {
+  /** Minor units; null means no limit. */
+  limits: { per_authorization: number | null; daily: number | null; monthly: number | null }
+  channels: { pos?: boolean; web?: boolean; atm?: boolean; mobile?: boolean }
+  /** Four-digit merchant category codes. */
+  blocked_categories: string[]
+}
+
+export interface Cardholder {
+  id: string
+  object: 'cardholder'
+  reference: string | null
+  status: 'pending' | 'active' | 'inactive' | 'failed'
+  name: string
+  email: string | null
+  phone: string | null
+  billing_address: Json | null
+  metadata: Json
+  created_at: string
+}
+
+export interface Card {
+  id: string
+  object: 'card'
+  reference: string | null
+  cardholder: string
+  programme: 'veyqo' | 'imported'
+  brand: 'Verve' | 'MasterCard' | 'Visa'
+  currency: 'NGN' | 'USD'
+  /** `inactive` is frozen. */
+  status: 'pending' | 'active' | 'inactive' | 'canceled' | 'failed'
+  last4: string | null
+  expiry_month: number | null
+  expiry_year: number | null
+  controls: CardControls
+  cancellation_reason: string | null
+  canceled_at: string | null
+  metadata: Json
+  created_at: string
+}
+
+export interface CardAuthorization {
+  id: string
+  object: 'card_authorization'
+  card: string
+  status: 'declined' | 'approved' | 'captured' | 'partially_captured' | 'reversed' | 'expired' | 'review' | 'pending'
+  approved: boolean
+  amount: number
+  fee: number
+  currency: string
+  captured_amount: number
+  decline_reason: string | null
+  decided_by: 'rules' | 'balance' | 'merchant' | 'timeout'
+  latency_ms: number
+  merchant_reference: string | null
+  merchant: { name: string | null; category: string | null; city: string | null; country: string | null }
+  channel: string | null
+  transaction_type: string | null
+  created_at: string
+}
+
+export interface CardTransaction {
+  id: string
+  object: 'card_transaction'
+  card: string
+  authorization: string | null
+  type: 'capture' | 'refund'
+  amount: number
+  currency: string
+  merchant_name: string | null
+  created_at: string
+}
+
+export interface CardBalance {
+  id: string
+  object: 'card_balance'
+  currency: string
+  available: number
+  posted: number
+  held: number
+  low_threshold: number | null
+  updated_at: string
+}
+
+/** What your authorization endpoint receives: verify with verifyCardAuthorization(). */
+export interface CardAuthorizationRequest {
+  id: string
+  type: 'card.authorization.request'
+  test?: boolean
+  created_at: string
+  environment: 'sandbox' | 'live'
+  data: { authorization: CardAuthorization; card: Card }
+}
+
 export declare class VeyqoError extends Error {
   code: string
   status: number
@@ -337,6 +431,71 @@ export declare class Veyqo {
     /** By id (spr_…) or your reference. */
     retrieve(recipientId: string): Promise<SplitRecipient>
   }
+  /** People cards are issued to. */
+  cardholders: {
+    create(
+      body: {
+        first_name: string
+        last_name: string
+        email?: string
+        phone?: string
+        date_of_birth?: string
+        /** Passed to the issuer, never stored by Veyqo. */
+        identity?: { type: 'BVN' | 'NIN'; number: string }
+        billing_address: { line1: string; line2?: string; city: string; state: string; postal_code: string; country: string }
+        programme?: 'veyqo' | 'imported'
+        reference?: string
+        metadata?: Json
+      },
+      options?: RequestOptions,
+    ): Promise<Cardholder>
+    list(query?: { page?: number; per_page?: number }): Promise<Page<Cardholder>>
+    retrieve(cardholderId: string): Promise<Cardholder>
+  }
+  /** Virtual cards. Only the last four digits are ever returned. */
+  cards: {
+    create(
+      body: { cardholder: string; brand: string; currency: string; controls?: Partial<CardControls>; reference?: string; metadata?: Json },
+      options?: RequestOptions,
+    ): Promise<Card>
+    list(query?: { page?: number; per_page?: number; status?: string; cardholder?: string }): Promise<Page<Card>>
+    retrieve(cardId: string): Promise<Card>
+    update(cardId: string, body: { status?: 'active' | 'inactive'; controls?: Partial<CardControls> }): Promise<Card>
+    cancel(cardId: string, reason: 'lost' | 'stolen', options?: RequestOptions): Promise<Card>
+    revealToken(cardId: string): Promise<{ token: string; card_id: string; vault: { id: string; url: string; script_url: string }; expires_in: number }>
+    /** Sandbox only. */
+    simulateAuthorization(cardId: string, body: { amount: number; channel?: string; merchant_name?: string; merchant_category?: string }, options?: RequestOptions): Promise<Json>
+  }
+  cardAuthorizations: {
+    list(query?: { page?: number; per_page?: number; card?: string; status?: string }): Promise<Page<CardAuthorization>>
+    retrieve(authorizationId: string): Promise<CardAuthorization>
+    /** Sandbox only. */
+    simulateReversal(authorizationId: string): Promise<Json>
+  }
+  cardTransactions: {
+    list(query?: { page?: number; per_page?: number; card?: string }): Promise<Page<CardTransaction>>
+    retrieve(transactionId: string): Promise<CardTransaction>
+  }
+  /** The prepaid balance on Veyqo's card programme. */
+  cardBalance: {
+    retrieve(): Promise<{ balances: CardBalance[]; fees: Json[] }>
+    entries(query?: { page?: number; per_page?: number; currency?: string }): Promise<Page<Json>>
+    topUp(body: { currency: string; amount: number; email: string }, options?: RequestOptions): Promise<{ status: 'awaiting_payment' | 'credited'; checkout_url: string | null }>
+    setLowThreshold(body: { currency: string; low_threshold: number | null }): Promise<CardBalance>
+    withdraw(
+      body: { currency: string; amount: number; bank_code: string; bank_name?: string; account_number: string; account_name: string },
+      options?: RequestOptions,
+    ): Promise<Json>
+    withdrawals(query?: { page?: number; per_page?: number }): Promise<Page<Json>>
+  }
+  cardProgrammes: {
+    list(): Promise<Json[]>
+    /** Returns the signing secret the first time only. */
+    setAuthorizationEndpoint(type: 'veyqo' | 'imported', url: string | null): Promise<Json & { signing_secret: string | null }>
+    rotateSecret(type: 'veyqo' | 'imported'): Promise<{ signing_secret: string }>
+    testEndpoint(type: 'veyqo' | 'imported'): Promise<Json>
+    importCards(body: { dry_run: boolean }): Promise<Json>
+  }
   events: { list(query?: Json): Promise<Page<Json>>; retrieve(eventId: string): Promise<Json> }
   providers: { list(): Promise<Json[]> }
   request<T = unknown>(method: string, path: string, body?: unknown, options?: RequestOptions): Promise<T>
@@ -348,5 +507,18 @@ export declare function verifyWebhook(
   secret: string,
   options?: { tolerance?: number; now?: number },
 ): Json
+
+export declare function verifyCardAuthorization(
+  rawBody: string | Buffer,
+  headers: Headers | Record<string, string | string[] | undefined>,
+  secret: string,
+  options?: { tolerance?: number; now?: number },
+): CardAuthorizationRequest
+
+export declare function cardAuthorizationResponse(answer: {
+  approved: boolean
+  reference?: string
+  declineReason?: string
+}): { approved: boolean; reference?: string; decline_reason?: string }
 
 export default Veyqo

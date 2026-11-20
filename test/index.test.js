@@ -137,3 +137,47 @@ test('new resources: balances, beneficiaries, batches, virtual accounts, split r
   assert.equal(seen[2].init.headers['Idempotency-Key'], undefined)
   assert.deepEqual(JSON.parse(seen[8].init.body).split, [{ recipient: 'spr_1', amount: 250000 }])
 })
+
+test('cards: issue, freeze, cancel and reveal, on the right endpoints', async () => {
+  const seen = []
+  const ok = (data) => ({ body: { success: true, data } })
+  const veyqo = new Veyqo('kc_test_abc', {
+    fetch: fakeFetch([ok({ id: 'ch_1' }), ok({ id: 'card_1', last4: '4321' }), ok({ id: 'card_1', status: 'inactive' }), ok({ id: 'card_1', status: 'canceled' }), ok({ token: 't' }), ok([]), ok({ balances: [] })], seen),
+  })
+  await veyqo.cardholders.create({ first_name: 'Ada', last_name: 'Obi', billing_address: { line1: '1 Marina', city: 'Lagos', state: 'Lagos', postal_code: '100001', country: 'NG' } })
+  assert.equal((await veyqo.cards.create({ cardholder: 'ch_1', brand: 'Verve', currency: 'NGN' })).last4, '4321')
+  await veyqo.cards.update('card_1', { status: 'inactive' })
+  await veyqo.cards.cancel('card_1', 'lost')
+  await veyqo.cards.revealToken('card_1')
+  await veyqo.cardProgrammes.list()
+  await veyqo.cardBalance.retrieve()
+  assert.deepEqual(seen.map((s) => `${s.init.method} ${new URL(s.url).pathname}`), [
+    'POST /api/v1/cardholders',
+    'POST /api/v1/cards',
+    'PATCH /api/v1/cards/card_1',
+    'POST /api/v1/cards/card_1/cancel',
+    'POST /api/v1/cards/card_1/reveal-token',
+    'GET /api/v1/card-programmes',
+    'GET /api/v1/card-balance',
+  ])
+  assert.equal(JSON.parse(seen[3].init.body).reason, 'lost')
+  assert.equal(seen[2].init.headers['Idempotency-Key'], undefined)
+})
+
+test('verifies a card authorization request and builds the answer', async () => {
+  const { verifyCardAuthorization, cardAuthorizationResponse } = await import('../src/index.js')
+  const body = JSON.stringify({ id: 'cauth_1', type: 'card.authorization.request', data: { authorization: { amount: 25000 } } })
+  const timestamp = Math.floor(Date.now() / 1000)
+  const signature = createHmac('sha256', 'whsec_card').update(`${timestamp}.${body}`).digest('hex')
+  const request = verifyCardAuthorization(body, { 'Veyqo-Timestamp': String(timestamp), 'Veyqo-Signature': signature }, 'whsec_card')
+  assert.equal(request.data.authorization.amount, 25000)
+
+  const other = JSON.stringify({ id: 'evt_1', type: 'payment.succeeded' })
+  const otherSignature = createHmac('sha256', 'whsec_card').update(`${timestamp}.${other}`).digest('hex')
+  assert.throws(() => verifyCardAuthorization(other, { 'Veyqo-Timestamp': String(timestamp), 'Veyqo-Signature': otherSignature }, 'whsec_card'), VeyqoSignatureError)
+  assert.throws(() => verifyCardAuthorization(body, { 'Veyqo-Timestamp': String(timestamp), 'Veyqo-Signature': 'bad' }, 'whsec_card'), VeyqoSignatureError)
+
+  assert.deepEqual(cardAuthorizationResponse({ approved: true, reference: 'hold_1' }), { approved: true, reference: 'hold_1' })
+  assert.deepEqual(cardAuthorizationResponse({ approved: false, declineReason: 'insufficient_funds' }), { approved: false, decline_reason: 'insufficient_funds' })
+  assert.throws(() => cardAuthorizationResponse({}), TypeError)
+})

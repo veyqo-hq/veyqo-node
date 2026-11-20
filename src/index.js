@@ -1,6 +1,6 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
 
-export const VERSION = '0.4.0'
+export const VERSION = '0.5.0'
 const DEFAULT_BASE_URL = 'https://api.veyqo.org/api/v1'
 
 /** Any error the API returned, with its documented code (docs/API.md). */
@@ -98,6 +98,51 @@ export class Veyqo {
       create: r('POST', '/split-recipients'),
       list: (query) => this.request('GET', '/split-recipients', undefined, { query }),
       retrieve: (recipientId) => this.request('GET', `/split-recipients/${id(recipientId)}`),
+    }
+    this.cardholders = {
+      create: r('POST', '/cardholders'),
+      list: (query) => this.request('GET', '/cardholders', undefined, { query }),
+      retrieve: (cardholderId) => this.request('GET', `/cardholders/${id(cardholderId)}`),
+    }
+    this.cards = {
+      create: r('POST', '/cards'),
+      list: (query) => this.request('GET', '/cards', undefined, { query }),
+      retrieve: (cardId) => this.request('GET', `/cards/${id(cardId)}`),
+      /** `{ status: 'inactive' }` freezes at once; `active` unfreezes; `controls` changes limits. */
+      update: (cardId, body) => this.request('PATCH', `/cards/${id(cardId)}`, body),
+      cancel: (cardId, reason, opts) => this.request('POST', `/cards/${id(cardId)}/cancel`, { reason }, opts),
+      /** A short-lived token for Sudo's vault display. The card number never passes through Veyqo. */
+      revealToken: (cardId) => this.request('POST', `/cards/${id(cardId)}/reveal-token`),
+      /** Sandbox only. */
+      simulateAuthorization: (cardId, body, opts) =>
+        this.request('POST', `/cards/${id(cardId)}/simulate-authorization`, body, opts),
+    }
+    this.cardAuthorizations = {
+      list: (query) => this.request('GET', '/card-authorizations', undefined, { query }),
+      retrieve: (authorizationId) => this.request('GET', `/card-authorizations/${id(authorizationId)}`),
+      /** Sandbox only. */
+      simulateReversal: (authorizationId) =>
+        this.request('POST', `/card-authorizations/${id(authorizationId)}/simulate-reversal`),
+    }
+    this.cardTransactions = {
+      list: (query) => this.request('GET', '/card-transactions', undefined, { query }),
+      retrieve: (transactionId) => this.request('GET', `/card-transactions/${id(transactionId)}`),
+    }
+    this.cardBalance = {
+      retrieve: () => this.request('GET', '/card-balance'),
+      entries: (query) => this.request('GET', '/card-balance/entries', undefined, { query }),
+      topUp: r('POST', '/card-balance/top-ups'),
+      setLowThreshold: (body) => this.request('PUT', '/card-balance/low-threshold', body),
+      withdraw: r('POST', '/card-balance/withdrawals'),
+      withdrawals: (query) => this.request('GET', '/card-balance/withdrawals', undefined, { query }),
+    }
+    this.cardProgrammes = {
+      list: () => this.request('GET', '/card-programmes'),
+      setAuthorizationEndpoint: (type, url) =>
+        this.request('PUT', `/card-programmes/${id(type)}/authorization-endpoint`, { url }),
+      rotateSecret: (type) => this.request('POST', `/card-programmes/${id(type)}/authorization-endpoint/rotate-secret`),
+      testEndpoint: (type) => this.request('POST', `/card-programmes/${id(type)}/authorization-endpoint/test`),
+      importCards: (body) => this.request('POST', '/card-programmes/imported/import', body),
     }
     this.events = {
       list: (query) => this.request('GET', '/events', undefined, { query }),
@@ -207,6 +252,30 @@ export function verifyWebhook(rawBody, headers, secret, { tolerance = 300, now =
   })
   if (!valid) throw new VeyqoSignatureError('Webhook signature does not match. Check the signing secret.')
   return JSON.parse(body)
+}
+
+/**
+ * Checks a real-time card authorization request from Veyqo and returns it.
+ *
+ * Signed exactly like a webhook, with your authorization endpoint's secret.
+ * Hold the amount in your own ledger (do not just read a balance), then
+ * answer within about 1.5 seconds with `cardAuthorizationResponse()`.
+ */
+export function verifyCardAuthorization(rawBody, headers, secret, options = {}) {
+  const request = verifyWebhook(rawBody, headers, secret, options)
+  if (request?.type !== 'card.authorization.request') {
+    throw new VeyqoSignatureError('Not a card authorization request.')
+  }
+  return request
+}
+
+/** The JSON body to answer a card authorization request with (HTTP 200). */
+export function cardAuthorizationResponse({ approved, reference, declineReason } = {}) {
+  if (typeof approved !== 'boolean') throw new TypeError('approved must be true or false')
+  const body = { approved }
+  if (reference) body.reference = String(reference)
+  if (!approved && declineReason) body.decline_reason = String(declineReason)
+  return body
 }
 
 export default Veyqo

@@ -76,6 +76,42 @@ const account = await veyqo.virtualAccounts.create({
 // with metadata.virtual_account_id and your metadata.
 ```
 
+### Cards
+
+Virtual cards on Sudo, decided in real time. Every payment on your own Sudo
+programme is asked of your authorization endpoint: hold the amount (do not
+just read a balance) and answer within about 1.5 seconds.
+
+```js
+const holder = await veyqo.cardholders.create({
+  first_name: 'Ada', last_name: 'Obi',
+  identity: { type: 'BVN', number: '22222222222' }, // passed to Sudo, never stored by Veyqo
+  billing_address: { line1: '1 Marina', city: 'Lagos', state: 'Lagos', postal_code: '100001', country: 'NG' },
+  reference: 'USER-42',
+})
+const card = await veyqo.cards.create({
+  cardholder: holder.id, brand: 'Verve', currency: 'NGN',
+  controls: { limits: { daily: 10_000_000 }, channels: { atm: false } },
+})
+await veyqo.cards.update(card.id, { status: 'inactive' }) // freeze at once
+const { token, vault } = await veyqo.cards.revealToken(card.id) // for Sudo's secure display
+```
+
+```js
+import { verifyCardAuthorization, cardAuthorizationResponse } from '@veyqo/node'
+
+app.post('/veyqo/card-authorize', express.raw({ type: 'application/json' }), async (req, res) => {
+  const request = verifyCardAuthorization(req.body, req.headers, process.env.VEYQO_CARD_SECRET)
+  const { amount, currency } = request.data.authorization
+  const hold = await wallets.hold(request.data.card.metadata.user_id, amount, currency, request.id) // idempotent on request.id
+  res.json(cardAuthorizationResponse(hold ? { approved: true, reference: hold.id } : { approved: false, declineReason: 'insufficient_funds' }))
+})
+// Release the hold on card.authorization.declined; settle it on card.transaction.created.
+```
+
+On Veyqo's own programme, payments are paid from your prepaid card balance:
+`veyqo.cardBalance.retrieve()`, `veyqo.cardBalance.topUp({ currency, amount, email })`.
+
 ### Split payments
 
 ```js
